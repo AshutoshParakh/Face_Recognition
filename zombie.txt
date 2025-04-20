@@ -1,0 +1,1014 @@
+from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
+import base64
+import os
+
+app = Flask(__name__)
+
+# Database configuration
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost/face_login'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Initialize extensions
+db = SQLAlchemy(app)
+CORS(app)  # Enable CORS for all routes and origins by default
+
+# User model
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    phone = db.Column(db.String(20), nullable=False)
+    password = db.Column(db.String(200), nullable=False)
+    image = db.Column(db.Text, nullable=True)
+    face_encoding = db.Column(db.LargeBinary, nullable=False)  # Use LargeBinary for face encoding
+
+# Create the database and tables
+with app.app_context():
+    db.create_all()
+
+# Register endpoint
+@app.route('/register', methods=['POST'])
+def register():
+    try:
+        data = request.get_json()
+        
+        print(f"Received data: {data}")  # Debug: Print received data
+
+        name = data.get('name')
+        email = data.get('email')
+        phone = data.get('phone')
+        password = data.get('password')
+        image = data.get('image')
+        face_encoding = data.get('face_encoding')
+
+        # Check if user already exists
+        if User.query.filter_by(email=email).first():
+            return jsonify({"message": "User already exists"}), 400
+
+        # Decode and save the image if provided
+        if image:
+            image_data = image.split(',')[1]  # Extract base64 part
+            image_data = base64.b64decode(image_data)
+            if not os.path.exists('images'):
+                os.makedirs('images')  # Create 'images' folder if it doesn't exist
+            image_path = os.path.join('images', f"{email}.png")
+            with open(image_path, 'wb') as img_file:
+                img_file.write(image_data)
+        else:
+            image_path = None
+
+        # Ensure face_encoding is properly decoded from base64
+        if face_encoding:
+            face_encoding_data = base64.b64decode(face_encoding)
+        else:
+            return jsonify({"message": "Face encoding is required"}), 400
+
+        # Create and save the user
+        new_user = User(
+            name=name,
+            email=email,
+            phone=phone,
+            password=password,  # You might want to hash the password
+            image=image_path,
+            face_encoding=face_encoding_data  # Save face encoding
+        )
+        db.session.add(new_user)
+        db.session.commit()
+
+        return jsonify({"message": "User registered successfully"}), 201
+
+    except Exception as e:
+        print(f"Error: {e}")  # Log the error for debugging
+        return jsonify({"error": str(e)}), 500  # Return a proper error response
+
+if __name__ == '__main__':
+    app.run(debug=True)
+ 
+
+
+
+
+ ??????????????????????????????????????????????????????????????????????????????????????????????????????????????
+
+
+
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Registration with Form</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px;
+            font-size: 16px;
+            background-color: #f4f4f4;
+        }
+        h1 {
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        form {
+            width: 350px;
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 3px 15px rgba(0, 0, 0, 0.1);
+        }
+        label {
+            margin-top: 10px;
+            display: block;
+            font-size: 14px;
+        }
+        input {
+            margin: 8px 0;
+            padding: 10px;
+            font-size: 14px;
+            width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            transition: border 0.3s;
+        }
+        input:focus {
+            border-color: #66afe9;
+            outline: none;
+        }
+        button {
+            padding: 10px;
+            margin-top: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        video, canvas {
+            margin-top: 20px;
+            border: 2px solid #ccc;
+            border-radius: 5px;
+        }
+        #video, #captureBtn, #retakeBtn, #preview, #signInBtn {
+            display: none;
+        }
+        #startCameraBtn {
+            display: inline;
+            margin-top: 15px;
+        }
+        .error {
+            color: red;
+            font-size: 14px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Register Your Account</h1>
+
+    <form id="registrationForm" onsubmit="event.preventDefault();">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" placeholder="Enter your name" required>
+
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="Enter your email" required>
+
+        <label for="phone">Phone</label>
+        <input type="tel" id="phone" name="phone" placeholder="Enter your phone number" required>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="Enter your password" required>
+
+        <button id="startCameraBtn" type="button">Click Image</button>
+        <video id="video" width="240" height="180" autoplay></video>
+        <button id="captureBtn" type="button">Capture Image</button>
+        <button id="retakeBtn" type="button">Retake Image</button>
+        <canvas id="preview" width="240" height="180"></canvas>
+
+        <p id="imageError" class="error">Please capture an image!</p>
+        <button id="signInBtn" type="submit">Sign Up</button>
+        <p id="formError" class="error">Please fill all the fields!</p>
+    </form>
+
+    <script>
+        const startCameraBtn = document.getElementById('startCameraBtn');
+        const video = document.getElementById('video');
+        const captureBtn = document.getElementById('captureBtn');
+        const retakeBtn = document.getElementById('retakeBtn');
+        const preview = document.getElementById('preview');
+        const context = preview.getContext('2d');
+        const signInBtn = document.getElementById('signInBtn');
+        const form = document.getElementById('registrationForm');
+        let imageCaptured = false;
+
+        const imageError = document.getElementById('imageError');
+        const formError = document.getElementById('formError');
+
+        startCameraBtn.addEventListener('click', () => {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.style.display = 'block';
+                    captureBtn.style.display = 'inline';
+                    startCameraBtn.style.display = 'none';
+                })
+                .catch(err => {
+                    console.log("Error accessing webcam: " + err);
+                });
+        });
+
+        captureBtn.addEventListener('click', () => {
+            context.drawImage(video, 0, 0, preview.width, preview.height);
+            video.style.display = 'none';
+            preview.style.display = 'block';
+            captureBtn.style.display = 'none';
+            retakeBtn.style.display = 'inline';
+            signInBtn.style.display = 'inline';
+            imageCaptured = true;
+        });
+
+        retakeBtn.addEventListener('click', () => {
+            preview.style.display = 'none';
+            video.style.display = 'block';
+            captureBtn.style.display = 'inline';
+            retakeBtn.style.display = 'none';
+            signInBtn.style.display = 'none';
+            imageCaptured = false;
+        });
+
+        signInBtn.addEventListener('click', async () => {
+            imageError.style.display = 'none';
+            formError.style.display = 'none';
+
+            const name = document.getElementById('name').value;
+            const email = document.getElementById('email').value;
+            const phone = document.getElementById('phone').value;
+            const password = document.getElementById('password').value;
+
+            if (!name || !email || !phone || !password) {
+                formError.style.display = 'block';
+                return;
+            }
+
+            if (!imageCaptured) {
+                imageError.style.display = 'block';
+                return;
+            }
+
+            // Convert canvas image to base64
+            const imageData = preview.toDataURL('image/jpeg', 0.7); // JPEG with 70% quality
+            console.log(imageData); // Debugging line
+
+            const userData = {
+                name,
+                email,
+                phone,
+                password,
+                image: imageData,
+            };
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(userData)
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    alert(result.message);
+                    form.reset(); // Reset the form
+                    preview.style.display = 'none';
+                    video.style.display = 'none'; 
+                    imageCaptured = false; // Reset image capture status
+                } else {
+                    alert(result.message || "An error occurred");
+                }
+            } catch (error) {
+                console.error("Error:", error);
+                alert("Registration failed: " + error.message);
+            }
+        });
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+???????????????????????????????????????????????????????????????????????????????Signin.py???????????????????????????????????????????????????????????????????????????
+
+import base64
+import os
+import numpy as np
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from werkzeug.security import check_password_hash
+import mysql.connector
+import face_recognition
+
+app = Flask(__name__)
+
+# Allow CORS for specific origins
+CORS(app, resources={r"/signin/*": {"origins": "http://127.0.0.1:5500"}})
+
+# Database configuration
+db_config = {
+    'user': 'root',
+    'password': '',
+    'host': 'localhost',
+    'database': 'face_login'
+}
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Return a JSON response with the error details."""
+    return jsonify({'error': str(e)}), 500
+
+@app.route('/signin', methods=['POST'])
+def sign_in_user():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+
+    if not (email and password):
+        return jsonify({'error': 'Email and password are required'}), 400
+
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor(dictionary=True)  # Set dictionary=True to fetch results as a dictionary
+
+    cursor.execute("SELECT * FROM user WHERE email = %s", (email,))
+    user = cursor.fetchone()
+
+    if user and check_password_hash(user['password'], password):
+        return jsonify({'message': 'Sign in successful'}), 200
+    else:
+        return jsonify({'error': 'Invalid email or password'}), 400
+
+@app.route('/signin/image', methods=['POST'])
+def sign_in_with_image():
+    data = request.json
+    email = data.get('email')
+    base64_str = data.get('image')
+
+    if not (email and base64_str):
+        return jsonify({'error': 'Email and image are required'}), 400
+
+    # Decode the base64 image
+    image_data = base64.b64decode(base64_str.split(',')[1])
+    
+    # Save the captured image temporarily
+    temp_image_path = "temp_image.jpg"
+    with open(temp_image_path, "wb") as f:
+        f.write(image_data)
+
+    # Load the user's face encoding from the database
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor(dictionary=True)  # Set dictionary=True to fetch results as a dictionary
+
+    cursor.execute("SELECT face_encoding FROM user WHERE email = %s", (email,))
+    user = cursor.fetchone()
+
+    if user:
+        if user['face_encoding'] is not None:  # Use string key since user is a dictionary
+            # Check the size of the face encoding data
+            face_encoding_data = user['face_encoding']
+            print(f"Face encoding data size: {len(face_encoding_data)} bytes")
+
+            # Ensure the size is appropriate for np.float64
+            if len(face_encoding_data) != 1024:  # 128 floats * 8 bytes each
+                os.remove(temp_image_path)  # Cleanup temporary file
+                return jsonify({'error': 'Invalid face encoding data size.'}), 400
+            
+            # Convert the stored BLOB to a numpy array
+            stored_encoding = np.frombuffer(face_encoding_data, dtype=np.float64)
+
+            # Load the captured image
+            captured_image = face_recognition.load_image_file(temp_image_path)
+            
+            # Get the face encoding for the captured image
+            try:
+                captured_encoding = face_recognition.face_encodings(captured_image)[0]
+
+                # Compare the captured face encoding with the stored face encoding
+                results = face_recognition.compare_faces([stored_encoding], captured_encoding)
+
+                if results[0]:
+                    os.remove(temp_image_path)  # Cleanup temporary file
+                    return jsonify({'message': 'Sign in with image successful'}), 200
+                else:
+                    os.remove(temp_image_path)  # Cleanup temporary file
+                    return jsonify({'error': 'Face recognition failed. Please try again.'}), 400
+
+            except IndexError:
+                os.remove(temp_image_path)  # Cleanup temporary file
+                return jsonify({'error': 'No face found in the image. Please retake the image.'}), 400
+        else:
+            os.remove(temp_image_path)  # Cleanup temporary file
+            return jsonify({'error': 'Face encoding not found for the user.'}), 404
+    else:
+        os.remove(temp_image_path)  # Cleanup temporary file
+        return jsonify({'error': 'No user found with this email.'}), 404
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+??????????????????????????????????????????app.py
+
+import base64
+import os
+import numpy as np
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
+import mysql.connector
+import face_recognition
+
+app = Flask(__name__)
+CORS(app)
+
+# Database configuration
+db_config = {
+    'user': 'root',
+    'password': '',
+    'host': 'localhost',
+    'database': 'face_login'
+}
+
+IMAGE_DIR = 'images'
+os.makedirs(IMAGE_DIR, exist_ok=True)
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Return a JSON response with the error details."""
+    return jsonify({'error': str(e)}), 500
+
+@app.route('/register', methods=['POST'])
+def register_user():
+    data = request.json
+    name = data.get('name')
+    email = data.get('email')
+    phone = data.get('phone')
+    password = data.get('password')
+    base64_str = data.get('image')
+    face_encoding = data.get('face_encoding')  # Get face encoding
+
+    if not (name and email and phone and password and base64_str and face_encoding):
+        return jsonify({'error': 'All fields are required'}), 400
+
+    # Ensure face_encoding is a numpy array
+    face_encoding_array = np.array(face_encoding)  # Convert to numpy array
+    face_encoding_bytes = face_encoding_array.tobytes()  # Convert to bytes
+
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT * FROM user WHERE email = %s", (email,))
+    existing_user = cursor.fetchone()
+
+    if existing_user:
+        return jsonify({'error': 'User already exists'}), 400
+
+    # Hash the password
+    hashed_password = generate_password_hash(password)
+
+    # Save the image
+    img_data = base64.b64decode(base64_str.split(',')[1])  # Decode base64 image
+    img_filename = f"{name.replace(' ', '_')}.jpg"  # Use a formatted name for the image
+    img_path = os.path.join(IMAGE_DIR, img_filename)
+
+    with open(img_path, 'wb') as img_file:
+        img_file.write(img_data)
+
+    # Store user data in database
+    cursor.execute("INSERT INTO user (name, email, phone, password, image, face_encoding) VALUES (%s, %s, %s, %s, %s, %s)",
+                   (name, email, phone, hashed_password, img_filename, face_encoding_bytes))  # Save as bytes
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+
+    return jsonify({'message': 'User registered successfully!'}), 201
+
+@app.route('/signin', methods=['POST'])
+def sign_in_user():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+
+    if not (email and password):
+        return jsonify({'error': 'Email and password are required'}), 400
+
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT * FROM user WHERE email = %s", (email,))
+    user = cursor.fetchone()
+
+    if user and check_password_hash(user['password'], password):
+        return jsonify({'message': 'Sign in successful'}), 200
+    else:
+        return jsonify({'error': 'Invalid email or password'}), 400
+
+@app.route('/signin/image', methods=['POST', 'OPTIONS'])
+def sign_in_with_image():
+    # Handle preflight requests
+    if request.method == 'OPTIONS':
+        return jsonify({'message': 'CORS preflight response'}), 200
+
+    data = request.json
+    email = data.get('email')
+    base64_str = data.get('image')
+
+    if not (email and base64_str):
+        return jsonify({'error': 'Email and image are required'}), 400
+
+    # Decode the base64 image
+    image_data = base64.b64decode(base64_str.split(',')[1])
+    
+    # Save the captured image temporarily
+    temp_image_path = "temp_image.jpg"
+    with open(temp_image_path, "wb") as f:
+        f.write(image_data)
+
+    # Load the user's face encoding from the database
+    conn = mysql.connector.connect(**db_config)
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT face_encoding FROM user WHERE email = %s", (email,))
+    user = cursor.fetchone()
+
+    if user:
+        face_encoding_data = user['face_encoding']
+        
+        # Check the size of the face encoding data
+        if face_encoding_data is not None:
+            # Print the length for debugging
+            print(f"Face encoding data size: {len(face_encoding_data)} bytes")  # Log the size
+            
+            # Ensure the size is appropriate for np.float64
+            if len(face_encoding_data) != 1024:  # 128 floats * 8 bytes each
+                os.remove(temp_image_path)  # Cleanup temporary file
+                return jsonify({'error': 'Invalid face encoding data size.'}), 400
+            
+            # Convert the stored BLOB to a numpy array
+            stored_encoding = np.frombuffer(face_encoding_data, dtype=np.float64)
+
+            # Load the captured image
+            captured_image = face_recognition.load_image_file(temp_image_path)
+            
+            # Get the face encoding for the captured image
+            try:
+                captured_encodings = face_recognition.face_encodings(captured_image)
+                if len(captured_encodings) == 0:
+                    os.remove(temp_image_path)  # Cleanup temporary file
+                    return jsonify({'error': 'No face found in the image. Please retake the image.'}), 400
+                
+                captured_encoding = captured_encodings[0]
+
+                # Compare the captured face encoding with the stored face encoding
+                results = face_recognition.compare_faces([stored_encoding], captured_encoding)
+
+                if results[0]:
+                    os.remove(temp_image_path)  # Cleanup temporary file
+                    return jsonify({'message': 'Sign in with image successful'}), 200
+                else:
+                    os.remove(temp_image_path)  # Cleanup temporary file
+                    return jsonify({'error': 'Face recognition failed. Please try again.'}), 400
+
+            except Exception as e:
+                os.remove(temp_image_path)  # Cleanup temporary file
+                return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+        else:
+            os.remove(temp_image_path)  # Cleanup temporary file
+            return jsonify({'error': 'Face encoding not found for the user.'}), 404
+    else:
+        os.remove(temp_image_path)  # Cleanup temporary file
+        return jsonify({'error': 'No user found with this email.'}), 404
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+
+
+
+
+
+
+
+
+
+
+
+?????????????????????????????????????????????????????????????????Signin.py???????????????????????????????????????????
+import os
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import base64
+import numpy as np
+import cv2
+import face_recognition
+from werkzeug.security import check_password_hash
+import mysql.connector
+from deepface import DeepFace
+
+# Suppress TensorFlow warnings
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
+app = Flask(__name__)
+
+# CORS settings
+CORS(app, resources={r"/signin/*": {"origins": "http://127.0.0.1:5500"}})
+
+# MySQL connection
+def get_db_connection():
+    connection = mysql.connector.connect(
+        host='localhost',
+        user='root',
+        password='',  # your MySQL password
+        database='face_login'
+    )
+    return connection
+
+@app.route('/signin/image', methods=['POST'])
+def signin_image():
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        image_data = data.get('image')
+
+        if not image_data:
+            return jsonify({"error": "No image data provided"}), 400
+
+        # Decode image (base64 without metadata)
+        image_data = base64.b64decode(image_data)
+        np_arr = np.frombuffer(image_data, np.uint8)
+        uploaded_image_path = "uploaded_image.jpg"  # Save uploaded image temporarily
+        cv2.imwrite(uploaded_image_path, cv2.imdecode(np_arr, cv2.IMREAD_COLOR))
+
+        # Check email and retrieve stored image path from DB
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        cursor.execute("SELECT image_path FROM user WHERE email = %s", (email,))
+        user = cursor.fetchone()
+
+        if user is None:
+            return jsonify({"error": "User not found"}), 404
+
+        stored_image_path = user[0]
+
+        # Validate stored image path
+        if not os.path.exists(stored_image_path):
+            print(f"Stored image does not exist: {stored_image_path}")
+            return jsonify({"error": "Stored image does not exist"}), 404
+
+        # Log the image paths for the verification process
+        print(f"Comparing with stored image at: {stored_image_path}")
+        print(f"Uploaded Image Path: {uploaded_image_path}")
+
+        # Check if the uploaded image exists
+        if not os.path.exists(uploaded_image_path):
+            print(f"Uploaded image does not exist: {uploaded_image_path}")
+            return jsonify({"error": "Uploaded image does not exist"}), 404
+
+        # Read and check images
+        uploaded_image = cv2.imread(uploaded_image_path)
+        stored_image = cv2.imread(stored_image_path)
+
+        if uploaded_image is None:
+            print(f"Uploaded image is None, check if the file is being written correctly.")
+            raise ValueError("Uploaded image is not valid or could not be read.")
+        if stored_image is None:
+            print(f"Stored image is None, check if the stored image is being loaded correctly.")
+            raise ValueError("Stored image is not valid or could not be read.")
+
+        # Check sizes and details of images
+        uploaded_image_size = os.path.getsize(uploaded_image_path)
+        stored_image_size = os.path.getsize(stored_image_path)
+        print(f"Uploaded image size: {uploaded_image_size}")
+        print(f"Stored image size: {stored_image_size}")
+
+        # Compare the uploaded face image with the stored face image
+        try:
+            result = DeepFace.verify(uploaded_image_path, stored_image_path, model_name="VGG-Face")
+            print(f"Verification Result: {result}")  # Log the result
+        except Exception as e:
+            print(f"DeepFace verification error: {str(e)}")
+            return jsonify({"error": "Error during face verification: " + str(e)}), 500
+
+        if result['verified']:
+            return jsonify({"message": "Image-based login successful"}), 200
+        else:
+            return jsonify({"error": "Face does not match"}), 401
+
+    except Exception as e:
+        print(f"Error in signin_image: {str(e)}")  # Log the error
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/signin', methods=['POST'])
+def signin():
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+
+        connection = get_db_connection()
+        cursor = connection.cursor()
+        cursor.execute("SELECT password FROM user WHERE email = %s", (email,))
+        user = cursor.fetchone()
+
+        if user is None:
+            return jsonify({"error": "Invalid email or password"}), 401
+
+        stored_password_hash = user[0]
+        
+        if check_password_hash(stored_password_hash, password):
+            return jsonify({"message": "Login successful"}), 200
+        else:
+            return jsonify({"error": "Invalid email or password"}), 401
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == "__main__":
+    app.run(debug=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+???????????????????????????????????????????????????????????????????????????????????????????????????????  Sign_in.html ????????????????????????????????????????????????
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px;
+            font-size: 16px;
+            background-color: #f4f4f4;
+        }
+        h1 {
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        form {
+            width: 350px;
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 3px 15px rgba(0, 0, 0, 0.1);
+        }
+        label {
+            margin-top: 10px;
+            display: block;
+            font-size: 14px;
+        }
+        input {
+            margin: 8px 0;
+            padding: 10px;
+            font-size: 14px;
+            width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            transition: border 0.3s;
+        }
+        input:focus {
+            border-color: #66afe9;
+            outline: none;
+        }
+        button {
+            padding: 10px;
+            margin-top: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        video, canvas {
+            margin-top: 20px;
+            border: 2px solid #ccc;
+            border-radius: 5px;
+        }
+        #video, #captureBtn, #retakeBtn, #preview, #signInWithImageBtn {
+            display: none;
+        }
+        #startCameraBtn {
+            display: inline;
+            margin-top: 15px;
+        }
+        .error {
+            color: red;
+            font-size: 14px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Sign In</h1>
+
+    <form id="signInForm">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="Enter your email" required>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="Enter your password">
+
+        <button type="submit">Sign In with Password</button>
+        
+        <h3>OR</h3>
+
+        <button id="startCameraBtn" type="button">Sign In with Image</button>
+        <video id="video" width="240" height="180" autoplay></video>
+        <button id="captureBtn" type="button">Capture Image</button>
+        <button id="retakeBtn" type="button">Retake Image</button>
+        <canvas id="preview" width="240" height="180"></canvas>
+        <button id="signInWithImageBtn" type="button">Submit Image</button>
+
+        <p id="imageError" class="error">Please capture an image!</p>
+        <p id="formError" class="error">Please fill all fields!</p>
+    </form>
+
+    <script>
+        const startCameraBtn = document.getElementById('startCameraBtn');
+        const video = document.getElementById('video');
+        const captureBtn = document.getElementById('captureBtn');
+        const retakeBtn = document.getElementById('retakeBtn');
+        const preview = document.getElementById('preview');
+        const context = preview.getContext('2d');
+        const signInForm = document.getElementById('signInForm');
+        const signInWithImageBtn = document.getElementById('signInWithImageBtn');
+        let imageCaptured = false;
+
+        const imageError = document.getElementById('imageError');
+        const formError = document.getElementById('formError');
+
+        startCameraBtn.addEventListener('click', () => {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.style.display = 'block';
+                    captureBtn.style.display = 'inline';
+                    startCameraBtn.style.display = 'none';
+                })
+                .catch(err => {
+                    console.log("Error accessing webcam: " + err);
+                });
+        });
+
+        captureBtn.addEventListener('click', () => {
+            context.drawImage(video, 0, 0, preview.width, preview.height);
+            video.style.display = 'none';
+            preview.style.display = 'block';
+            captureBtn.style.display = 'none';
+            retakeBtn.style.display = 'inline';
+            signInWithImageBtn.style.display = 'inline';
+            imageCaptured = true;
+        });
+
+        retakeBtn.addEventListener('click', () => {
+            preview.style.display = 'none';
+            video.style.display = 'block';
+            captureBtn.style.display = 'inline';
+            retakeBtn.style.display = 'none';
+            signInWithImageBtn.style.display = 'none';
+            imageCaptured = false;
+        });
+
+        signInForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            if (!imageCaptured) {
+                if (email && password) {
+                    await signInWithPassword(email, password);
+                } else {
+                    formError.style.display = 'block';
+                }
+            }
+        });
+
+        signInWithImageBtn.addEventListener('click', async () => {
+            const email = document.getElementById('email').value;
+            if (imageCaptured && email) {
+                const dataURL = preview.toDataURL('image/jpeg');
+                const cleanedImageData = dataURL.split(',')[1]; // Remove metadata
+                await signInWithImage(email, cleanedImageData);
+            } else {
+                imageError.style.display = 'block';
+            }
+        });
+
+        async function signInWithPassword(email, password) {
+            try {
+                const response = await fetch('http://127.0.0.1:5000/signin', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert(data.message);
+                } else {
+                    alert(data.error);
+                }
+            } catch (error) {
+                console.error('Error signing in with password:', error);
+            }
+        }
+
+        async function signInWithImage(email, imageData) {
+            try {
+                const response = await fetch('http://127.0.0.1:5000/signin/image', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, image: imageData })
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert(data.message);
+                } else {
+                    alert(data.error);
+                }
+            } catch (error) {
+                console.error('Error signing in with image:', error);
+            }
+        }
+    </script>
+</body>
+</html>

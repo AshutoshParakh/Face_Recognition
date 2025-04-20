@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 20px;
+            font-size: 16px;
+            background-color: #f4f4f4;
+        }
+        h1 {
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        form {
+            width: 350px;
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 3px 15px rgba(0, 0, 0, 0.1);
+        }
+        label {
+            margin-top: 10px;
+            display: block;
+            font-size: 14px;
+        }
+        input {
+            margin: 8px 0;
+            padding: 10px;
+            font-size: 14px;
+            width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            transition: border 0.3s;
+        }
+        input:focus {
+            border-color: #66afe9;
+            outline: none;
+        }
+        button {
+            padding: 10px;
+            margin-top: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 14px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        video, canvas {
+            margin-top: 20px;
+            border: 2px solid #ccc;
+            border-radius: 5px;
+        }
+        #video, #captureBtn, #retakeBtn, #preview, #signInWithImageBtn {
+            display: none;
+        }
+        #startCameraBtn {
+            display: inline;
+            margin-top: 15px;
+        }
+        .error {
+            color: red;
+            font-size: 14px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Sign In</h1>
+
+    <form id="signInForm">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="Enter your email" required>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="Enter your password">
+
+        <button type="submit">Sign In with Password</button>
+        
+        <h3>OR</h3>
+
+        <button id="startCameraBtn" type="button">Sign In with Image</button>
+        <video id="video" width="240" height="180" autoplay></video>
+        <button id="captureBtn" type="button">Capture Image</button>
+        <button id="retakeBtn" type="button">Retake Image</button>
+        <canvas id="preview" width="240" height="180"></canvas>
+        <button id="signInWithImageBtn" type="button">Submit Image</button>
+
+        <p id="imageError" class="error">Please capture an image!</p>
+        <p id="formError" class="error">Please fill all fields!</p>
+    </form>
+
+    <script>
+        const startCameraBtn = document.getElementById('startCameraBtn');
+        const video = document.getElementById('video');
+        const captureBtn = document.getElementById('captureBtn');
+        const retakeBtn = document.getElementById('retakeBtn');
+        const preview = document.getElementById('preview');
+        const context = preview.getContext('2d');
+        const signInForm = document.getElementById('signInForm');
+        const signInWithImageBtn = document.getElementById('signInWithImageBtn');
+        let imageCaptured = false;
+
+        const imageError = document.getElementById('imageError');
+        const formError = document.getElementById('formError');
+
+        startCameraBtn.addEventListener('click', () => {
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    video.srcObject = stream;
+                    video.style.display = 'block';
+                    captureBtn.style.display = 'inline';
+                    startCameraBtn.style.display = 'none';
+                })
+                .catch(err => {
+                    console.log("Error accessing webcam: " + err);
+                });
+        });
+
+        captureBtn.addEventListener('click', () => {
+            context.drawImage(video, 0, 0, preview.width, preview.height);
+            video.style.display = 'none';
+            preview.style.display = 'block';
+            captureBtn.style.display = 'none';
+            retakeBtn.style.display = 'inline';
+            signInWithImageBtn.style.display = 'inline';
+            imageCaptured = true;
+        });
+
+        retakeBtn.addEventListener('click', () => {
+            preview.style.display = 'none';
+            video.style.display = 'block';
+            captureBtn.style.display = 'inline';
+            retakeBtn.style.display = 'none';
+            signInWithImageBtn.style.display = 'none';
+            imageCaptured = false;
+        });
+
+        signInForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            if (!imageCaptured) {
+                if (email && password) {
+                    await signInWithPassword(email, password);
+                } else {
+                    formError.style.display = 'block';
+                }
+            }
+        });
+
+        signInWithImageBtn.addEventListener('click', async () => {
+            const email = document.getElementById('email').value;
+            if (imageCaptured && email) {
+                const dataURL = preview.toDataURL('image/jpeg');
+                const cleanedImageData = dataURL.split(',')[1]; // Remove metadata
+                await signInWithImage(email, cleanedImageData);
+            } else {
+                imageError.style.display = 'block';
+            }
+        });
+
+        async function signInWithPassword(email, password) {
+            try {
+                const response = await fetch('http://127.0.0.1:5000/signin', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    window.location.href = "success.html";  // Redirect on success
+                } else {
+                    formError.textContent = data.error;
+                    formError.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error signing in with password:', error);
+            }
+        }
+
+        async function signInWithImage(email, imageData) {
+            try {
+                const response = await fetch('http://127.0.0.1:5000/signin/image', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, image: imageData })
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    window.location.href = "success.html";  // Redirect on success
+                } else {
+                    imageError.textContent = data.error;
+                    imageError.style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error signing in with image:', error);
+            }
+        }
+    </script>
+</body>
+</html>
